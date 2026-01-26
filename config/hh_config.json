@@ -1,0 +1,23 @@
+﻿{
+    "hh_api": {
+        "base_url": "https://api.hh.ru",
+        "user_agent": "MyApp/1.0 (my-app-feedback@example.com)",
+        "client_id": "",
+        "client_secret": "",
+        "access_token": ""
+    },
+    "clickhouse": {
+        "host": "clickhouse-server",
+        "port": 9000,
+        "database": "analytics",
+        "user": "admin",
+        "password": "clickhouse_pass"
+    },
+    "vacancies": {
+        "search_text": "python developer",
+        "area": 1,  # Москва
+        "period": 30,  # дни
+        "per_page": 100,
+        "pages": 20
+    }
+}
