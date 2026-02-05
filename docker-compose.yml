@@ -1,4 +1,5 @@
-﻿
+﻿version: '3.8'
+
 services:
   clickhouse:
     image: clickhouse/clickhouse-server:23.8-alpine
@@ -6,12 +7,24 @@ services:
     ports:
       - "8123:8123"
       - "9000:9000"
+      - "9009:9009"
     environment:
       CLICKHOUSE_USER: admin
       CLICKHOUSE_PASSWORD: clickhouse_pass
-      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      CLICKHOUSE_DEFAULT_ACCESS_MAGEMENT: 1
     volumes:
-      - clickhouse_data:/var/lib/clickhouse
+      - ./clickhouse_data:/var/lib/clickhouse
+      - ./config/clickhouse/users.xml:/etc/clickhouse-server/users.d/users.xml
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
 
   postgres:
     image: postgres:13
@@ -22,50 +35,51 @@ services:
       POSTGRES_DB: airflow
     volumes:
       - postgres_data:/var/lib/postgresql/data
-
-  redis:
-    image: redis:7-alpine
-    container_name: airflow-redis
-    command: redis-server --requirepass redis_pass
+    restart: unless-stopped
 
   airflow-webserver:
     image: apache/airflow:2.7.1
     container_name: airflow-webserver
-    ports:
-      - "8080:8080"
+    depends_on:
+      - postgres
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow_pass@postgres/airflow
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow_pass@postgres/airflow
+      AIRFLOW__CORE__FERNET_KEY: ''
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
-      AIRFLOW__CORE__FERNET_KEY: UVf6U_Hp02dE2Cq-6Nq_YZCCKTGylB9bqA2Bq9Mft50=
+      AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth'
     volumes:
       - ./dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
       - ./plugins:/opt/airflow/plugins
-    command: >
-      bash -c "
-        airflow db init &&
-        airflow users create -u admin -p admin -f Admin -l User -r Admin -e admin@example.com &&
-        airflow webserver
-      "
-    depends_on:
-      - postgres
+    ports:
+      - "8080:8080"
+    command: webserver
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
 
   airflow-scheduler:
     image: apache/airflow:2.7.1
     container_name: airflow-scheduler
+    depends_on:
+      - airflow-webserver
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow_pass@postgres/airflow
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow_pass@postgres/airflow
+      AIRFLOW__CORE__FERNET_KEY: ''
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     volumes:
       - ./dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
       - ./plugins:/opt/airflow/plugins
     command: scheduler
-    depends_on:
-      - airflow-webserver
-      - postgres
+    restart: unless-stopped
 
 volumes:
   clickhouse_data:
