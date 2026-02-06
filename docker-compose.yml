@@ -1,31 +1,6 @@
 ﻿version: '3.8'
-
 services:
-  clickhouse:
-    image: clickhouse/clickhouse-server:23.8-alpine
-    container_name: clickhouse-server
-    ports:
-      - "8123:8123"
-      - "9000:9000"
-      - "9009:9009"
-    environment:
-      CLICKHOUSE_USER: admin
-      CLICKHOUSE_PASSWORD: clickhouse_pass
-      CLICKHOUSE_DEFAULT_ACCESS_MAGEMENT: 1
-    volumes:
-      - ./clickhouse_data:/var/lib/clickhouse
-      - ./config/clickhouse/users.xml:/etc/clickhouse-server/users.d/users.xml
-    ulimits:
-      nofile:
-        soft: 262144
-        hard: 262144
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-    restart: unless-stopped
-
+  # PostgreSQL для метаданных AirFlow
   postgres:
     image: postgres:13
     container_name: airflow-postgres
@@ -35,20 +10,115 @@ services:
       POSTGRES_DB: airflow
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - airflow-network
 
-  airflow-webserver:
+  # Redis для Celery
+  redis:
+    image: redis:7-alpine
+    container_name: airflow-redis
+    command: redis-server --requirepass redis_pass
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - airflow-network
+
+  # ClickHouse сервер
+  clickhouse-server:
+    image: clickhouse/clickhouse-server:23.8
+    container_name: clickhouse-server
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    environment:
+      CLICKHOUSE_DB: analytics
+      CLICKHOUSE_USER: admin
+      CLICKHOUSE_PASSWORD: clickhouse_pass
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./config/clickhouse/config.xml:/etc/clickhouse-server/config.xml
+      - ./config/clickhouse/users.xml:/etc/clickhouse-server/users.xml
+    networks:
+      - airflow-network
+
+  # AirFlow инициализация
+  airflow-init:
     image: apache/airflow:2.7.1
-    container_name: airflow-webserver
+    container_name: airflow-init
     depends_on:
       - postgres
     environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow_pass@postgres/airflow
-      AIRFLOW__CORE__FERNET_KEY: ''
-      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow_pass@postgres/airflow
+      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow_pass@postgres/airflow
+      AIRFLOW__CELERY__BROKER_URL: redis://:redis_pass@redis:6379/0
+      AIRFLOW__CORE__FERNET_KEY: UVf6U_Hp02dE2Cq-6Nq_YZCCKTGylB9bqA2Bq9Mft50=
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
-      AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth'
+      _AIRFLOW_WWW_USER_USERNAME: admin
+      _AIRFLOW_WWW_USER_PASSWORD: admin
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+    command: >
+      bash -c "
+        airflow db init &&
+        airflow users create -u admin -p admin -f Admin -l User -r Admin -e admin@example.com &&
+        echo 'AirFlow инициализирован'"
+    networks:
+      - airflow-network
+
+  # AirFlow Scheduler
+  airflow-scheduler:
+    image: apache/airflow:2.7.1
+    container_name: airflow-scheduler
+    restart: always
+    depends_on:
+      - airflow-init
+      - postgres
+      - redis
+    environment:
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow_pass@postgres/airflow
+      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow_pass@postgres/airflow
+      AIRFLOW__CELERY__BROKER_URL: redis://:redis_pass@redis:6379/0
+      AIRFLOW__CORE__FERNET_KEY: UVf6U_Hp02dE2Cq-6Nq_YZCCKTGylB9bqA2Bq9Mft50=
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+    command: scheduler
+    networks:
+      - airflow-network
+
+  # AirFlow Webserver
+  airflow-webserver:
+    image: apache/airflow:2.7.1
+    container_name: airflow-webserver
+    restart: always
+    depends_on:
+      - airflow-init
+      - postgres
+      - redis
+    environment:
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow_pass@postgres/airflow
+      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow_pass@postgres/airflow
+      AIRFLOW__CELERY__BROKER_URL: redis://:redis_pass@redis:6379/0
+      AIRFLOW__CORE__FERNET_KEY: UVf6U_Hp02dE2Cq-6Nq_YZCCKTGylB9bqA2Bq9Mft50=
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW__WEBSERVER__SECRET_KEY: mysecretkey1234567890
     volumes:
       - ./dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
@@ -56,31 +126,54 @@ services:
     ports:
       - "8080:8080"
     command: webserver
-    healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-    restart: unless-stopped
+    networks:
+      - airflow-network
 
-  airflow-scheduler:
+  # AirFlow Worker
+  airflow-worker:
     image: apache/airflow:2.7.1
-    container_name: airflow-scheduler
+    container_name: airflow-worker
+    restart: always
     depends_on:
-      - airflow-webserver
+      - airflow-scheduler
+      - postgres
+      - redis
     environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow_pass@postgres/airflow
-      AIRFLOW__CORE__FERNET_KEY: ''
-      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow_pass@postgres/airflow
+      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow_pass@postgres/airflow
+      AIRFLOW__CELERY__BROKER_URL: redis://:redis_pass@redis:6379/0
+      AIRFLOW__CORE__FERNET_KEY: UVf6U_Hp02dE2Cq-6Nq_YZCCKTGylB9bqA2Bq9Mft50=
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     volumes:
       - ./dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
       - ./plugins:/opt/airflow/plugins
-    command: scheduler
-    restart: unless-stopped
+    command: celery worker
+    networks:
+      - airflow-network
+
+  # Flower для мониторинга Celery
+  airflow-flower:
+    image: apache/airflow:2.7.1
+    container_name: airflow-flower
+    restart: always
+    depends_on:
+      - airflow-worker
+      - redis
+    environment:
+      AIRFLOW__CELERY__BROKER_URL: redis://:redis_pass@redis:6379/0
+    ports:
+      - "5555:5555"
+    command: celery flower
+    networks:
+      - airflow-network
+
+networks:
+  airflow-network:
+    driver: bridge
 
 volumes:
-  clickhouse_data:
   postgres_data:
+  redis_data:
+  clickhouse_data:
