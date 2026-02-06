@@ -41,7 +41,7 @@ services:
       - "8123:8123"
       - "9000:9000"
     environment:
-      CLICKHOUSE_DB: analytics
+      CLICKHOUSE_DB: hh_data
       CLICKHOUSE_USER: admin
       CLICKHOUSE_PASSWORD: clickhouse_pass
     volumes:
@@ -177,3 +177,4 @@ volumes:
   postgres_data:
   redis_data:
   clickhouse_data:
+
