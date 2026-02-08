@@ -52,6 +52,7 @@ docker-compose logs -f
 
 | Сервис | URL | Учетные данные |
 |--------|-----|----------------|
+| **Веб-интерфейс** | **http://localhost:5001** | — |
 | **Airflow UI** | http://localhost:8080 | airflow / airflow |
 | **ClickHouse HTTP** | http://localhost:8123 | admin / clickhouse_pass |
 
@@ -82,15 +83,7 @@ SELECT COUNT(*) FROM hh_data.vacancies_simple;
 - salary_from, salary_to, salary_currency
 - published_date, url, loaded_at
 
----
-⭐ **Если проект полезен, поставьте звезду на GitHub!**
 
 
-## 🌐 Доступ к сервисам
 
-| Сервис | URL | Логин/Пароль |
-|--------|-----|--------------|
-| **Веб-интерфейс** | **http://localhost:5001** | — |
-| **Airflow UI** | http://localhost:8080 | admin/admin |
-| **ClickHouse HTTP** | http://localhost:8123 | admin/clickhouse_pass |
 
