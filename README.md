@@ -84,3 +84,13 @@ SELECT COUNT(*) FROM hh_data.vacancies_simple;
 
 ---
 ⭐ **Если проект полезен, поставьте звезду на GitHub!**
+
+
+## 🌐 Доступ к сервисам
+
+| Сервис | URL | Логин/Пароль |
+|--------|-----|--------------|
+| **Веб-интерфейс** | **http://localhost:5001** | — |
+| **Airflow UI** | http://localhost:8080 | admin/admin |
+| **ClickHouse HTTP** | http://localhost:8123 | admin/clickhouse_pass |
+
