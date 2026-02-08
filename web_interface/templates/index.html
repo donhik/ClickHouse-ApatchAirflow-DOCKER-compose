@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="dashboard">
+    <h2>📈 Дашборд вакансий HH.ru</h2>
+    
+    <div class="stats-grid">
+        <div class="stat-card">
+            <h3>Всего вакансий</h3>
+            <p class="stat-number">{{ stats.total_vacancies }}</p>
+            <p class="stat-subtitle">Последнее обновление: {{ stats.last_update }}</p>
+        </div>
+        
+        <div class="stat-card">
+            <h3>Средняя зарплата</h3>
+            <p class="stat-number">{{ stats.avg_salary|int }} ₽</p>
+            <p class="stat-subtitle">Только в рублях (RUR)</p>
+        </div>
+        
+        <div class="stat-card">
+            <h3>Airflow Status</h3>
+            <p class="stat-number {% if airflow_status.status == 'healthy' %}success{% elif airflow_status.status == 'error' %}error{% endif %}">
+                {{ airflow_status.status }}
+            </p>
+        </div>
+    </div>
+    
+    <!-- Топ компаний -->
+    <div class="section">
+        <h3>🏆 Топ компаний по количеству вакансий</h3>
+        <ul class="top-companies">
+            {% for company in stats.top_companies %}
+            <li>{{ company.name }} <span class="count-badge">{{ company.count }}</span></li>
+            {% endfor %}
+        </ul>
+    </div>
+    
+    <!-- Последние вакансии -->
+    <div class="section">
+        <h3>🆕 Последние вакансии</h3>
+        <div class="vacancies-list">
+            {% for vacancy in stats.recent_vacancies %}
+            <div class="vacancy-card">
+                <h4>{{ vacancy.title }}</h4>
+                <p class="company">{{ vacancy.company }}</p>
+                <p class="location">📍 {{ vacancy.city }}</p>
+                <p class="salary">
+                    {% if vacancy.salary_from > 0 and vacancy.salary_to > 0 %}
+                    {{ vacancy.salary_from|int }} - {{ vacancy.salary_to|int }} ₽
+                    {% elif vacancy.salary_from > 0 %}
+                    от {{ vacancy.salary_from|int }} ₽
+                    {% elif vacancy.salary_to > 0 %}
+                    до {{ vacancy.salary_to|int }} ₽
+                    {% endif %}
+                </p>
+                <p class="date">{{ vacancy.published_date }}</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    
+    <div class="quick-actions">
+        <a href="{{ url_for('analytics') }}" class="btn-primary">📊 Подробная аналитика</a>
+        <a href="{{ url_for('query') }}" class="btn-secondary">🔍 SQL запросы</a>
+        <a href="http://localhost:8080" target="_blank" class="btn-secondary">✈️ Airflow DAGs</a>
+    </div>
+</div>
+{% endblock %}

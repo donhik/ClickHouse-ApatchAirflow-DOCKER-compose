@@ -169,6 +169,28 @@ services:
     networks:
       - airflow-network
 
+  # Веб-интерфейс для аналитики вакансий
+  web-interface:
+    build: ./web_interface
+    container_name: web-interface
+    ports:
+      - "5001:5000"
+    depends_on:
+      - clickhouse-server
+      - airflow-webserver
+    environment:
+      - CLICKHOUSE_HOST=clickhouse-server
+      - CLICKHOUSE_PORT=9000
+      - CLICKHOUSE_USER=admin
+      - CLICKHOUSE_PASSWORD=clickhouse_pass
+      - CLICKHOUSE_DATABASE=hh_data
+      - AIRFLOW_HOST=airflow-webserver
+      - AIRFLOW_PORT=8080
+      - AIRFLOW_USER=airflow
+      - AIRFLOW_PASSWORD=airflow
+    networks:
+      - airflow-network
+
 networks:
   airflow-network:
     driver: bridge
@@ -177,4 +199,3 @@ volumes:
   postgres_data:
   redis_data:
   clickhouse_data:
-

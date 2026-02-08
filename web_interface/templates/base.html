@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}HH.ru Analytics Dashboard{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body>
+    <nav>
+        <div class="container">
+            <h1>📊 HH.ru Analytics</h1>
+            <ul>
+                <li><a href="{{ url_for('index') }}">Главная</a></li>
+                <li><a href="{{ url_for('analytics') }}">Аналитика</a></li>
+                <li><a href="{{ url_for('query') }}">Запросы</a></li>
+                <li><a href="{{ url_for('status') }}">Статус</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2026 HH.ru Analytics Dashboard | <a href="http://localhost:8080" target="_blank">Airflow UI</a> | <a href="http://localhost:8123" target="_blank">ClickHouse</a></p>
+        </div>
+    </footer>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>
