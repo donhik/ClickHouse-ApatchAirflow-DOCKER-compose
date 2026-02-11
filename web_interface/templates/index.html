@@ -5,64 +5,216 @@
     <h2>📈 Дашборд вакансий HH.ru</h2>
     
     <div class="stats-grid">
+        <!-- Всего вакансий -->
         <div class="stat-card">
+            <div class="stat-icon">📋</div>
             <h3>Всего вакансий</h3>
             <p class="stat-number">{{ stats.total_vacancies }}</p>
             <p class="stat-subtitle">Последнее обновление: {{ stats.last_update }}</p>
         </div>
         
+        <!-- Средняя зарплата -->
         <div class="stat-card">
+            <div class="stat-icon">💰</div>
             <h3>Средняя зарплата</h3>
             <p class="stat-number">{{ stats.avg_salary|int }} ₽</p>
             <p class="stat-subtitle">Только в рублях (RUR)</p>
         </div>
         
+        <!-- Airflow Status -->
         <div class="stat-card">
+            <div class="stat-icon">{% if airflow_status.status == 'healthy' %}✅{% else %}❌{% endif %}</div>
             <h3>Airflow Status</h3>
-            <p class="stat-number {% if airflow_status.status == 'healthy' %}success{% elif airflow_status.status == 'error' %}error{% endif %}">
-                {{ airflow_status.status }}
+            <p class="stat-number {% if airflow_status.status == 'healthy' %}success{% elif airflow_status.status == 'error' %}error{% else %}warning{% endif %}">
+                {% if airflow_status.status == 'healthy' %}
+                    Работает
+                {% elif airflow_status.status == 'error' %}
+                    Ошибка
+                {% else %}
+                    Неизвестно
+                {% endif %}
+            </p>
+            <p class="stat-subtitle">
+                {% if airflow_status.status == 'healthy' %}
+                    ✈️ DAG выполнен успешно
+                {% elif airflow_status.status == 'error' %}
+                    ⚠️ Проблемы с подключением
+                {% else %}
+                    🔄 Проверка статуса...
+                {% endif %}
             </p>
         </div>
     </div>
     
     <!-- Топ компаний -->
     <div class="section">
-        <h3>🏆 Топ компаний по количеству вакансий</h3>
-        <ul class="top-companies">
-            {% for company in stats.top_companies %}
-            <li>{{ company.name }} <span class="count-badge">{{ company.count }}</span></li>
-            {% endfor %}
-        </ul>
+        <div class="section-header">
+            <h3>🏆 Топ компаний по количеству вакансий</h3>
+            <span class="section-badge">{{ stats.top_companies|length }}</span>
+        </div>
+        {% if stats.top_companies and stats.top_companies|length > 0 %}
+            <ul class="top-companies">
+                {% for company in stats.top_companies %}
+                <li>
+                    <span class="company-name">{{ company.name }}</span>
+                    <span class="count-badge">{{ company.count }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <div class="empty-state">
+                <div class="empty-icon">📭</div>
+                <p>Нет данных о компаниях</p>
+                <small>Проверьте подключение к базе данных</small>
+            </div>
+        {% endif %}
     </div>
     
     <!-- Последние вакансии -->
     <div class="section">
-        <h3>🆕 Последние вакансии</h3>
-        <div class="vacancies-list">
-            {% for vacancy in stats.recent_vacancies %}
-            <div class="vacancy-card">
-                <h4>{{ vacancy.title }}</h4>
-                <p class="company">{{ vacancy.company }}</p>
-                <p class="location">📍 {{ vacancy.city }}</p>
-                <p class="salary">
-                    {% if vacancy.salary_from > 0 and vacancy.salary_to > 0 %}
-                    {{ vacancy.salary_from|int }} - {{ vacancy.salary_to|int }} ₽
-                    {% elif vacancy.salary_from > 0 %}
-                    от {{ vacancy.salary_from|int }} ₽
-                    {% elif vacancy.salary_to > 0 %}
-                    до {{ vacancy.salary_to|int }} ₽
-                    {% endif %}
-                </p>
-                <p class="date">{{ vacancy.published_date }}</p>
-            </div>
-            {% endfor %}
+        <div class="section-header">
+            <h3>🆕 Последние вакансии</h3>
+            <span class="section-badge">{{ stats.recent_vacancies|length }}</span>
         </div>
+        {% if stats.recent_vacancies and stats.recent_vacancies|length > 0 %}
+            <div class="vacancies-list">
+                {% for vacancy in stats.recent_vacancies %}
+                <div class="vacancy-card">
+                    <h4>{{ vacancy.title }}</h4>
+                    <p class="company">🏢 {{ vacancy.company }}</p>
+                    <p class="location">📍 {{ vacancy.city }}</p>
+                    <p class="salary">
+                        {% if vacancy.salary_from > 0 and vacancy.salary_to > 0 %}
+                            💰 {{ vacancy.salary_from|int }} - {{ vacancy.salary_to|int }} ₽
+                        {% elif vacancy.salary_from > 0 %}
+                            💰 от {{ vacancy.salary_from|int }} ₽
+                        {% elif vacancy.salary_to > 0 %}
+                            💰 до {{ vacancy.salary_to|int }} ₽
+                        {% else %}
+                            💰 Зарплата не указана
+                        {% endif %}
+                    </p>
+                    <p class="date">📅 {{ vacancy.published_date }}</p>
+                </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="empty-state">
+                <div class="empty-icon">📭</div>
+                <p>Нет данных о вакансиях</p>
+                <small>Проверьте подключение к базе данных</small>
+            </div>
+        {% endif %}
     </div>
     
+    <!-- Быстрые действия -->
     <div class="quick-actions">
         <a href="{{ url_for('analytics') }}" class="btn-primary">📊 Подробная аналитика</a>
         <a href="{{ url_for('query') }}" class="btn-secondary">🔍 SQL запросы</a>
-        <a href="http://localhost:8080" target="_blank" class="btn-secondary">✈️ Airflow DAGs</a>
+        <a href="http://localhost:8080" target="_blank" class="btn-secondary">✈️ Airflow UI</a>
+        <a href="{{ url_for('status') }}" class="btn-secondary">⚙️ Статус системы</a>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Автообновление каждые 60 секунд (опционально)
+    // setTimeout(() => {
+    //     location.reload();
+    // }, 60000);
+</script>
+
+<style>
+    /* Иконки статистики */
+    .stat-icon {
+        font-size: 2.5rem;
+        margin-bottom: 15px;
+        opacity: 0.9;
+    }
+    
+    /* Заголовки секций с бейджами */
+    .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+    }
+    
+    .section-header h3 {
+        margin: 0;
+    }
+    
+    .section-badge {
+        background: #667eea;
+        color: white;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.9rem;
+        font-weight: bold;
+    }
+    
+    /* Пустое состояние */
+    .empty-state {
+        text-align: center;
+        padding: 40px 20px;
+        background: #f8f9fa;
+        border-radius: 12px;
+        border: 2px dashed #dee2e6;
+    }
+    
+    .empty-icon {
+        font-size: 3rem;
+        margin-bottom: 15px;
+        color: #adb5bd;
+    }
+    
+    .empty-state p {
+        color: #495057;
+        font-size: 1.2rem;
+        margin-bottom: 10px;
+    }
+    
+    .empty-state small {
+        color: #6c757d;
+        font-size: 0.9rem;
+    }
+    
+    /* Компании */
+    .company-name {
+        flex: 1;
+        font-weight: 500;
+    }
+    
+    /* Вакансии - улучшенный дизайн */
+    .vacancy-card h4 {
+        font-size: 1.1rem;
+        color: #212529;
+        margin-bottom: 8px;
+    }
+    
+    .vacancy-card .company {
+        color: #667eea;
+        font-weight: 600;
+        margin-bottom: 5px;
+    }
+    
+    .vacancy-card .location {
+        color: #6c757d;
+        font-size: 0.95rem;
+        margin-bottom: 3px;
+    }
+    
+    .vacancy-card .salary {
+        color: #28a745;
+        font-weight: bold;
+        margin-bottom: 3px;
+    }
+    
+    .vacancy-card .date {
+        color: #adb5bd;
+        font-size: 0.9rem;
+        margin-bottom: 0;
+    }
+</style>
 {% endblock %}

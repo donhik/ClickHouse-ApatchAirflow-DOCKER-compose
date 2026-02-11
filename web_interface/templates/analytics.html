@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block title %}Аналитика{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <h2>📈 Подробная аналитика</h2>
+    
+    <div class="charts-grid">
+        <!-- Распределение по зарплате -->
+        <div class="chart-container">
+            <h3>Распределение по зарплате</h3>
+            <div id="salary-chart" style="height: 400px;"></div>
+        </div>
+        
+        <!-- Уровень опыта -->
+        <div class="chart-container">
+            <h3>Уровень опыта</h3>
+            <div id="experience-chart" style="height: 400px;"></div>
+        </div>
+        
+        <!-- График работы -->
+        <div class="chart-container">
+            <h3>График работы</h3>
+            <div id="schedule-chart" style="height: 400px;"></div>
+        </div>
+        
+        <!-- Тип занятости -->
+        <div class="chart-container">
+            <h3>Тип занятости</h3>
+            <div id="employment-chart" style="height: 400px;"></div>
+        </div>
+    </div>
+    
+    <div class="quick-actions" style="margin-top: 30px;">
+        <a href="{{ url_for('index') }}" class="btn-primary">🏠 На главную</a>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Распределение по зарплате
+    const salaryData = {{ data.salary_distribution | tojson }};
+    if (salaryData && salaryData.length > 0) {
+        const salaryTrace = {
+            x: salaryData.map(d => d.range),
+            y: salaryData.map(d => d.count),
+            type: 'bar',
+            marker: {color: '#667eea'},
+            text: salaryData.map(d => d.count),
+            textposition: 'auto'
+        };
+        const salaryLayout = {
+            title: '',
+            xaxis: {title: 'Диапазон зарплаты'},
+            yaxis: {title: 'Количество вакансий'},
+            margin: {t: 30, b: 80, l: 40, r: 20},
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            paper_bgcolor: 'rgba(0,0,0,0)'
+        };
+        Plotly.newPlot('salary-chart', [salaryTrace], salaryLayout);
+    } else {
+        document.getElementById('salary-chart').innerHTML = '<p style="color: #777; text-align: center; padding: 50px;">Нет данных</p>';
+    }
+    
+    // Уровень опыта
+    const expData = {{ data.experience_levels | tojson }};
+    if (expData && expData.length > 0) {
+        const expTrace = {
+            labels: expData.map(d => d.level),
+            values: expData.map(d => d.count),
+            type: 'pie',
+            marker: {colors: ['#667eea', '#764ba2', '#f093fb', '#4facfe', '#43e97b']},
+            textinfo: 'label+percent',
+            hoverinfo: 'label+value'
+        };
+        const expLayout = {
+            title: '',
+            margin: {t: 30, b: 30, l: 30, r: 30},
+            paper_bgcolor: 'rgba(0,0,0,0)'
+        };
+        Plotly.newPlot('experience-chart', [expTrace], expLayout);
+    } else {
+        document.getElementById('experience-chart').innerHTML = '<p style="color: #777; text-align: center; padding: 50px;">Нет данных</p>';
+    }
+    
+    // График работы
+    const scheduleData = {{ data.schedule_types | tojson }};
+    if (scheduleData && scheduleData.length > 0) {
+        const scheduleTrace = {
+            x: scheduleData.map(d => d.type),
+            y: scheduleData.map(d => d.count),
+            type: 'bar',
+            marker: {color: '#764ba2'},
+            text: scheduleData.map(d => d.count),
+            textposition: 'auto'
+        };
+        const scheduleLayout = {
+            title: '',
+            xaxis: {title: 'Тип графика', tickangle: -45},
+            yaxis: {title: 'Количество'},
+            margin: {t: 30, b: 100, l: 40, r: 20},
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            paper_bgcolor: 'rgba(0,0,0,0)'
+        };
+        Plotly.newPlot('schedule-chart', [scheduleTrace], scheduleLayout);
+    } else {
+        document.getElementById('schedule-chart').innerHTML = '<p style="color: #777; text-align: center; padding: 50px;">Нет данных</p>';
+    }
+    
+    // Тип занятости
+    const employmentData = {{ data.employment_types | tojson }};
+    if (employmentData && employmentData.length > 0) {
+        const employmentTrace = {
+            labels: employmentData.map(d => d.type),
+            values: employmentData.map(d => d.count),
+            type: 'pie',
+            marker: {colors: ['#4facfe', '#43e97b', '#fa709a', '#f093fb']},
+            textinfo: 'label+percent',
+            hoverinfo: 'label+value'
+        };
+        const employmentLayout = {
+            title: '',
+            margin: {t: 30, b: 30, l: 30, r: 30},
+            paper_bgcolor: 'rgba(0,0,0,0)'
+        };
+        Plotly.newPlot('employment-chart', [employmentTrace], employmentLayout);
+    } else {
+        document.getElementById('employment-chart').innerHTML = '<p style="color: #777; text-align: center; padding: 50px;">Нет данных</p>';
+    }
+</script>
+{% endblock %}

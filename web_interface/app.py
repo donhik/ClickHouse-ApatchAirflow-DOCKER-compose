@@ -1,6 +1,7 @@
-﻿from flask import Flask, render_template_string
+﻿from flask import Flask, render_template
 import os
 from clickhouse_driver import Client
+from datetime import datetime
 
 app = Flask(__name__)
 
@@ -14,83 +15,232 @@ def get_clickhouse_client():
             database=os.getenv('CLICKHOUSE_DATABASE', 'hh_data')
         )
     except Exception as e:
-        print(f'ClickHouse error: {e}')
+        print(f'ClickHouse connection error: {e}')
         return None
 
 @app.route('/')
 def index():
     client = get_clickhouse_client()
-    total = 0
-    avg_salary = 0
+    
+    stats = {
+        "total_vacancies": 0,
+        "avg_salary": 0,
+        "top_companies": [],
+        "recent_vacancies": [],
+        "last_update": "N/A"
+    }
+    
+    airflow_status = {"status": "error"}
     
     if client:
         try:
-            # Общее количество вакансий
-            result = client.execute('SELECT COUNT(*) FROM vacancies_simple')
-            total = result[0][0] if result and result[0] else 0
+            # 1. Общее количество вакансий
+            result = client.execute('SELECT COUNT(*) FROM hh_data.vacancies_enhanced')
+            stats["total_vacancies"] = result[0][0] if result and result[0] else 0
             
-            # Средняя зарплата
+            # 2. Средняя зарплата (только в рублях, с проверкой на NULL)
             result = client.execute('''
                 SELECT ROUND(AVG((salary_from + salary_to) / 2)) 
-                FROM vacancies_simple 
-                WHERE salary_from > 0 AND salary_to > 0 AND salary_currency = 'RUR'
+                FROM hh_data.vacancies_enhanced 
+                WHERE salary_from IS NOT NULL 
+                  AND salary_to IS NOT NULL 
+                  AND salary_currency IN ('RUR', 'RUB')
             ''')
-            avg_salary = result[0][0] if result and result[0] else 0
+            stats["avg_salary"] = int(result[0][0]) if result and result[0] and result[0][0] else 0
+            
+            # 3. Топ-5 компаний (с обработкой пустых значений)
+            result = client.execute('''
+                SELECT 
+                    IF(employer = '' OR employer IS NULL, 'Неизвестно', employer) as employer_name,
+                    COUNT(*) as cnt 
+                FROM hh_data.vacancies_enhanced 
+                GROUP BY employer_name 
+                ORDER BY cnt DESC 
+                LIMIT 5
+            ''')
+            stats["top_companies"] = [
+                {"name": row[0], "count": row[1]} 
+                for row in result
+            ]
+            
+            # 4. Последние 5 вакансий (с обработкой пустых значений)
+            result = client.execute('''
+                SELECT 
+                    name, 
+                    IF(employer = '' OR employer IS NULL, 'Неизвестно', employer) as employer,
+                    city, 
+                    salary_from, 
+                    salary_to, 
+                    salary_currency,
+                    created_at 
+                FROM hh_data.vacancies_enhanced 
+                ORDER BY created_at DESC 
+                LIMIT 5
+            ''')
+            stats["recent_vacancies"] = []
+            for row in result:
+                vacancy = {
+                    "title": row[0] if row[0] else "Без названия",
+                    "company": row[1] if row[1] else "Неизвестно",
+                    "city": row[2] if row[2] else "Не указан",
+                    "salary_from": int(row[3]) if row[3] is not None else 0,
+                    "salary_to": int(row[4]) if row[4] is not None else 0,
+                    "currency": row[5] if row[5] else "RUR",
+                    "published_date": row[6].strftime('%Y-%m-%d %H:%M:%S') if row[6] else "N/A"
+                }
+                stats["recent_vacancies"].append(vacancy)
+            
+            # 5. Время последнего обновления (используем created_at)
+            result = client.execute('SELECT MAX(created_at) FROM hh_data.vacancies_enhanced')
+            last_update_time = result[0][0] if result and result[0] else None
+            stats["last_update"] = last_update_time.strftime('%Y-%m-%d %H:%M:%S') if last_update_time else "N/A"
+            
+            # Статус Airflow — если есть данные, считаем его здоровым
+            if stats["total_vacancies"] > 0:
+                airflow_status = {"status": "healthy"}
+            
+            print("=== DEBUG INFO ===")
+            print(f"Total vacancies: {stats['total_vacancies']}")
+            print(f"Average salary: {stats['avg_salary']} ₽")
+            print(f"Last update: {stats['last_update']}")
+            print(f"Top companies: {stats['top_companies']}")
+            print(f"Recent vacancies: {stats['recent_vacancies']}")
+            print("===================")
+            
         except Exception as e:
             print(f'Query error: {e}')
+            import traceback
+            traceback.print_exc()
+            # Не меняем статус на "error", если данные уже загружены
     
-    # Гарантируем, что значения числовые
-    total = int(total) if total is not None else 0
-    avg_salary = int(avg_salary) if avg_salary is not None else 0
+    return render_template('index.html', stats=stats, airflow_status=airflow_status)
+
+@app.route('/analytics')
+def analytics():
+    client = get_clickhouse_client()
     
-    return render_template_string('''
-    <!DOCTYPE html>
-    <html lang='ru'>
-    <head>
-        <meta charset='UTF-8'>
-        <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-        <title>HH.ru Analytics</title>
-        <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); margin: 0; padding: 20px; color: #333; min-height: 100vh; }
-            .container { max-width: 1000px; margin: 40px auto; background: white; border-radius: 20px; padding: 40px; box-shadow: 0 15px 50px rgba(0,0,0,0.25); text-align: center; }
-            h1 { color: #667eea; margin-bottom: 10px; font-size: 2.5rem; }
-            .subtitle { color: #777; margin-bottom: 40px; font-size: 1.2rem; }
-            .stat-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 35px; border-radius: 16px; margin: 20px auto; width: 300px; box-shadow: 0 10px 30px rgba(102,126,234,0.4); }
-            .stat-number { font-size: 4rem; font-weight: bold; margin: 15px 0; }
-            .stat-label { font-size: 1.4rem; opacity: 0.95; }
-            .links { margin-top: 40px; display: flex; justify-content: center; gap: 25px; flex-wrap: wrap; }
-            .link-btn { background: rgba(102,126,234,0.15); color: #667eea; padding: 12px 25px; border-radius: 10px; text-decoration: none; font-weight: 600; font-size: 1.1rem; transition: all 0.3s; }
-            .link-btn:hover { background: rgba(102,126,234,0.25); transform: translateY(-3px); }
-            .footer { margin-top: 50px; color: rgba(255,255,255,0.8); font-size: 0.95rem; }
-        </style>
-    </head>
-    <body>
-        <div class='container'>
-            <h1>📊 HH.ru Analytics</h1>
-            <div class='subtitle'>Дашборд вакансий на базе ClickHouse + Airflow</div>
+    data = {
+        "salary_distribution": [],
+        "experience_levels": [],
+        "schedule_types": [],
+        "employment_types": [],
+        "top_skills": []
+    }
+    
+    if client:
+        try:
+            # Распределение по зарплате
+            result = client.execute('''
+                SELECT 
+                    CASE 
+                        WHEN (salary_from + salary_to) / 2 < 50000 THEN 'До 50 000 ₽'
+                        WHEN (salary_from + salary_to) / 2 < 100000 THEN '50 000 - 100 000 ₽'
+                        WHEN (salary_from + salary_to) / 2 < 200000 THEN '100 000 - 200 000 ₽'
+                        ELSE 'Более 200 000 ₽'
+                    END as salary_range,
+                    COUNT(*) as count
+                FROM hh_data.vacancies_enhanced 
+                WHERE salary_from IS NOT NULL AND salary_to IS NOT NULL AND salary_currency IN ('RUR', 'RUB')
+                GROUP BY salary_range
+                ORDER BY 
+                    CASE salary_range
+                        WHEN 'До 50 000 ₽' THEN 1
+                        WHEN '50 000 - 100 000 ₽' THEN 2
+                        WHEN '100 000 - 200 000 ₽' THEN 3
+                        ELSE 4
+                    END
+            ''')
+            data["salary_distribution"] = [{"range": row[0], "count": row[1]} for row in result]
             
-            <div class='stat-card'>
-                <div class='stat-label'>Всего вакансий</div>
-                <div class='stat-number'>''' + str(total) + '''</div>
-            </div>
+            # Уровень опыта
+            result = client.execute('''
+                SELECT 
+                    IF(experience = '' OR experience IS NULL, 'Не указан', experience) as exp_level,
+                    COUNT(*) as count
+                FROM hh_data.vacancies_enhanced 
+                GROUP BY exp_level
+                ORDER BY count DESC
+            ''')
+            data["experience_levels"] = [{"level": row[0], "count": row[1]} for row in result]
             
-            <div class='stat-card'>
-                <div class='stat-label'>Средняя зарплата</div>
-                <div class='stat-number'>''' + str(avg_salary) + ''' ₽</div>
-            </div>
+            # График работы
+            result = client.execute('''
+                SELECT 
+                    IF(schedule = '' OR schedule IS NULL, 'Не указан', schedule) as sched_type,
+                    COUNT(*) as count
+                FROM hh_data.vacancies_enhanced 
+                GROUP BY sched_type
+                ORDER BY count DESC
+            ''')
+            data["schedule_types"] = [{"type": row[0], "count": row[1]} for row in result]
             
-            <div class='links'>
-                <a href='http://localhost:8080' class='link-btn' target='_blank'>✈️ Airflow UI</a>
-                <a href='http://localhost:8123' class='link-btn' target='_blank'>📊 ClickHouse</a>
-            </div>
+            # Тип занятости
+            result = client.execute('''
+                SELECT 
+                    IF(employment = '' OR employment IS NULL, 'Не указан', employment) as emp_type,
+                    COUNT(*) as count
+                FROM hh_data.vacancies_enhanced 
+                GROUP BY emp_type
+                ORDER BY count DESC
+            ''')
+            data["employment_types"] = [{"type": row[0], "count": row[1]} for row in result]
             
-            <div class='footer'>
-                <p>Веб-интерфейс запущен успешно | Порт: 5001</p>
-            </div>
-        </div>
-    </body>
-    </html>
-    ''')
+        except Exception as e:
+            print(f'Analytics query error: {e}')
+            import traceback
+            traceback.print_exc()
+    
+    return render_template('analytics.html', data=data)
+
+@app.route('/query')
+def query():
+    return render_template('query.html')
+
+@app.route('/status')
+def status():
+    client = get_clickhouse_client()
+    
+    system_info = {
+        "clickhouse_status": "error",
+        "database_size": "N/A",
+        "table_count": "N/A",
+        "airflow_status": "error"
+    }
+    
+    if client:
+        try:
+            # Статус ClickHouse
+            result = client.execute('SELECT 1')
+            if result:
+                system_info["clickhouse_status"] = "healthy"
+            
+            # Размер базы данных
+            result = client.execute('''
+                SELECT formatReadableSize(sum(bytes)) 
+                FROM system.parts 
+                WHERE database = 'hh_data'
+            ''')
+            system_info["database_size"] = result[0][0] if result else "N/A"
+            
+            # Количество таблиц
+            result = client.execute('''
+                SELECT COUNT(*) 
+                FROM system.tables 
+                WHERE database = 'hh_data'
+            ''')
+            system_info["table_count"] = result[0][0] if result else "N/A"
+            
+            # Статус таблицы
+            result = client.execute("SELECT COUNT(*) FROM hh_data.vacancies_enhanced")
+            if result and result[0][0] > 0:
+                system_info["airflow_status"] = "healthy"
+            
+        except Exception as e:
+            print(f'Status query error: {e}')
+            import traceback
+            traceback.print_exc()
+    
+    return render_template('status.html', system_info=system_info)
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    app.run(host='0.0.0.0', port=5000, debug=True)
