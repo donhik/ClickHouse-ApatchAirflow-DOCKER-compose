@@ -37,15 +37,21 @@
             <div class="example-query">
                 <h5>Средняя зарплата по городам:</h5>
                 <code>SELECT 
-                            city,
-                            COUNT(*) as vacancy_count,
-                            ROUND(AVG((IF(salary_from IS NULL, 0, salary_from) + IF(salary_to IS NULL, 0, salary_to)) / 2)) as avg_salary
-                        FROM hh_data.vacancies_enhanced 
-                        WHERE 
-                            city IN ('Moscow', 'Krasnodar', 'Volgograd')
-                            AND salary_currency IN ('RUR', 'RUB')
-                        GROUP BY city
-                        ORDER BY avg_salary DESC</code>
+                        CASE 
+                            WHEN TRIM(city) IN ('Moscow', 'Москва') THEN 'Москва'
+                            WHEN TRIM(city) IN ('Krasnodar', 'Краснодар') THEN 'Краснодар'
+                            WHEN TRIM(city) IN ('Volgograd', 'Волгоград') THEN 'Волгоград'
+                            ELSE TRIM(city)
+                        END AS city,
+                        COUNT(*) AS vacancy_count,
+                        ROUND(AVG(
+                            (COALESCE(salary_from, 0) + COALESCE(salary_to, 0)) / 2
+                        )) AS avg_salary
+                    FROM hh_data.vacancies_enhanced 
+                    WHERE 
+                        TRIM(city) IN ('Moscow', 'Москва', 'Krasnodar', 'Краснодар', 'Volgograd', 'Волгоград')
+                    GROUP BY city
+                    ORDER BY avg_salary DESC</code>
                 <button class="btn-secondary" onclick="loadExample(this)">📋 Копировать</button>
             </div>
             
