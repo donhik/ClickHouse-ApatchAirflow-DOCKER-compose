@@ -242,5 +242,71 @@ def status():
     
     return render_template('status.html', system_info=system_info)
 
+from flask import request, jsonify
+
+@app.route('/execute_query', methods=['POST'])
+def execute_query():
+    client = get_clickhouse_client()
+    
+    if not client:
+        return jsonify({
+            "success": False,
+            "error": "Не удалось подключиться к ClickHouse"
+        })
+    
+    try:
+        # Получаем SQL-запрос из запроса
+        data = request.get_json()
+        sql_query = data.get('query', '').strip()
+        
+        if not sql_query:
+            return jsonify({
+                "success": False,
+                "error": "SQL-запрос не может быть пустым"
+            })
+        
+        # Выполняем запрос
+        result = client.execute(sql_query, with_column_types=True)
+        
+        # Разделяем данные и типы колонок
+        rows = result[0]
+        columns = result[1] if len(result) > 1 else []
+        
+        # Формируем результат
+        column_names = [col[0] for col in columns] if columns else []
+        
+        # Если нет колонок, формируем автоматически
+        if not column_names and rows:
+            column_names = [f"column_{i+1}" for i in range(len(rows[0]) if rows[0] else 0)]
+        
+        # Преобразуем результат в список словарей
+        result_list = []
+        for row in rows:
+            row_dict = {}
+            for i, col_name in enumerate(column_names):
+                value = row[i] if i < len(row) else None
+                # Преобразуем дату/время в строку
+                if hasattr(value, 'strftime'):
+                    value = value.strftime('%Y-%m-%d %H:%M:%S')
+                row_dict[col_name] = value
+            result_list.append(row_dict)
+        
+        return jsonify({
+            "success": True,
+            "query": sql_query,
+            "columns": column_names,
+            "rows": result_list,
+            "row_count": len(result_list)
+        })
+        
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "error_details": error_details
+        })
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

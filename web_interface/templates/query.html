@@ -10,12 +10,18 @@
         <h3>Выполнить произвольный SQL-запрос</h3>
         
         <div class="query-editor">
-            <textarea id="sql-query" rows="8" placeholder="Введите ваш SQL-запрос к ClickHouse...&#10;&#10;Пример:&#10;SELECT employer_name, COUNT(*) as cnt&#10;FROM vacancies_simple&#10;GROUP BY employer_name&#10;ORDER BY cnt DESC&#10;LIMIT 10">{{ query if query else '' }}</textarea>
-            <button class="btn-primary" onclick="executeQuery()" style="margin-top: 15px;">▶️ Выполнить запрос</button>
+            <textarea id="sql-query" rows="8" placeholder="Введите ваш SQL-запрос к ClickHouse...&#10;&#10;Пример:&#10;SELECT employer, COUNT(*) as cnt&#10;FROM hh_data.vacancies_enhanced&#10;GROUP BY employer&#10;ORDER BY cnt DESC&#10;LIMIT 10">{{ query if query else '' }}</textarea>
+            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                <button class="btn-primary" onclick="executeQuery()">▶️ Выполнить запрос</button>
+                <button class="btn-secondary" onclick="clearResults()">🗑️ Очистить</button>
+            </div>
         </div>
         
         <div id="query-result" class="query-result" style="margin-top: 20px; display: none;">
-            <h4>Результат:</h4>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h4>Результат:</h4>
+                <span id="row-count" style="color: #667eea; font-weight: bold;"></span>
+            </div>
             <div id="result-content"></div>
         </div>
         
@@ -24,25 +30,46 @@
             
             <div class="example-query">
                 <h5>Топ-10 компаний по количеству вакансий:</h5>
-                <code>SELECT employer_name, COUNT(*) as cnt FROM vacancies_simple GROUP BY employer_name ORDER BY cnt DESC LIMIT 10</code>
+                <code>SELECT employer, COUNT(*) as cnt FROM hh_data.vacancies_enhanced GROUP BY employer ORDER BY cnt DESC LIMIT 10</code>
                 <button class="btn-secondary" onclick="loadExample(this)">📋 Копировать</button>
             </div>
             
             <div class="example-query">
                 <h5>Средняя зарплата по городам:</h5>
-                <code>SELECT area_name, ROUND(AVG((salary_from + salary_to) / 2)) as avg_salary FROM vacancies_simple WHERE salary_from > 0 AND salary_to > 0 AND salary_currency = 'RUR' GROUP BY area_name ORDER BY avg_salary DESC LIMIT 10</code>
+                <code>SELECT 
+                            city,
+                            COUNT(*) as vacancy_count,
+                            ROUND(AVG((IF(salary_from IS NULL, 0, salary_from) + IF(salary_to IS NULL, 0, salary_to)) / 2)) as avg_salary
+                        FROM hh_data.vacancies_enhanced 
+                        WHERE 
+                            city IN ('Moscow', 'Krasnodar', 'Volgograd')
+                            AND salary_currency IN ('RUR', 'RUB')
+                        GROUP BY city
+                        ORDER BY avg_salary DESC</code>
                 <button class="btn-secondary" onclick="loadExample(this)">📋 Копировать</button>
             </div>
             
             <div class="example-query">
                 <h5>Вакансии с удалённой работой:</h5>
-                <code>SELECT name, employer_name, schedule FROM vacancies_simple WHERE schedule = 'Удаленная работа' LIMIT 20</code>
+                <code>SELECT name, employer, schedule FROM hh_data.vacancies_enhanced WHERE schedule = 'Удаленная работа' LIMIT 20</code>
                 <button class="btn-secondary" onclick="loadExample(this)">📋 Копировать</button>
             </div>
             
             <div class="example-query">
                 <h5>Распределение по опыту работы:</h5>
-                <code>SELECT experience, COUNT(*) as count FROM vacancies_simple WHERE experience != '' GROUP BY experience ORDER BY count DESC</code>
+                <code>SELECT experience, COUNT(*) as count FROM hh_data.vacancies_enhanced WHERE experience != '' AND experience IS NOT NULL GROUP BY experience ORDER BY count DESC</code>
+                <button class="btn-secondary" onclick="loadExample(this)">📋 Копировать</button>
+            </div>
+            
+            <div class="example-query">
+                <h5>Количество вакансий по типу занятости:</h5>
+                <code>SELECT employment, COUNT(*) as count FROM hh_data.vacancies_enhanced WHERE employment != '' AND employment IS NOT NULL GROUP BY employment ORDER BY count DESC</code>
+                <button class="btn-secondary" onclick="loadExample(this)">📋 Копировать</button>
+            </div>
+            
+            <div class="example-query">
+                <h5>Все вакансии с зарплатой выше 200000 ₽:</h5>
+                <code>SELECT name, employer, city, salary_from, salary_to FROM hh_data.vacancies_enhanced WHERE salary_from > 200000 OR salary_to > 200000 ORDER BY salary_from DESC LIMIT 20</code>
                 <button class="btn-secondary" onclick="loadExample(this)">📋 Копировать</button>
             </div>
         </div>
@@ -67,21 +94,86 @@ function executeQuery() {
     
     const resultDiv = document.getElementById('query-result');
     const resultContent = document.getElementById('result-content');
+    const rowCount = document.getElementById('row-count');
     
     resultDiv.style.display = 'block';
     resultContent.innerHTML = '<p style="color: #667eea;">⏳ Выполнение запроса...</p>';
+    rowCount.textContent = '';
     
-    // Здесь можно добавить AJAX-запрос к бэкенду
-    // Пока просто показываем запрос
-    setTimeout(() => {
+    // Выполняем запрос через fetch
+    fetch('/execute_query', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ query: query })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Показываем результат в виде таблицы
+            if (data.rows && data.rows.length > 0) {
+                let tableHTML = `
+                    <div style="overflow-x: auto;">
+                        <table style="width: 100%; border-collapse: collapse; background: white;">
+                            <thead>
+                                <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                                    ${data.columns.map(col => `<th style="padding: 12px; text-align: left; border: 1px solid #dee2e6;">${escapeHtml(col)}</th>`).join('')}
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+                
+                data.rows.forEach((row, rowIndex) => {
+                    const rowStyle = rowIndex % 2 === 0 ? 'background: #f8f9fa;' : '';
+                    tableHTML += `<tr style="${rowStyle}">`;
+                    data.columns.forEach(col => {
+                        let cellValue = row[col];
+                        if (cellValue === null || cellValue === undefined) {
+                            cellValue = 'NULL';
+                        } else if (typeof cellValue === 'object') {
+                            cellValue = JSON.stringify(cellValue);
+                        }
+                        tableHTML += `<td style="padding: 10px; border: 1px solid #dee2e6;">${escapeHtml(String(cellValue))}</td>`;
+                    });
+                    tableHTML += `</tr>`;
+                });
+                
+                tableHTML += `
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+                
+                resultContent.innerHTML = tableHTML;
+                rowCount.textContent = `${data.row_count} строк`;
+            } else {
+                resultContent.innerHTML = '<p style="color: #777; padding: 20px; background: #f8f9fa; border-radius: 8px;">Запрос выполнен успешно, но результат пустой.</p>';
+                rowCount.textContent = '0 строк';
+            }
+        } else {
+            // Показываем ошибку
+            resultContent.innerHTML = `
+                <div style="background: #fa709a; color: white; padding: 20px; border-radius: 8px;">
+                    <strong>❌ Ошибка выполнения запроса:</strong><br>
+                    ${escapeHtml(data.error)}
+                    ${data.error_details ? '<br><br><details><summary>Подробнее</summary><pre style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 5px; overflow-x: auto; max-height: 200px;">' + escapeHtml(data.error_details) + '</pre></details>' : ''}
+                </div>
+            `;
+        }
+    })
+    .catch(error => {
         resultContent.innerHTML = `
-            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #667eea;">
-                <p><strong>Запрос:</strong></p>
-                <pre style="background: #2d2d2d; color: #f8f8f2; padding: 15px; border-radius: 5px; overflow-x: auto;">${escapeHtml(query)}</pre>
-                <p style="margin-top: 15px; color: #777;">Для выполнения запросов и получения результатов необходимо реализовать API-эндпоинт в app.py</p>
+            <div style="background: #fa709a; color: white; padding: 20px; border-radius: 8px;">
+                <strong>❌ Ошибка подключения:</strong> ${error.message}
             </div>
         `;
-    }, 500);
+    });
+}
+
+function clearResults() {
+    document.getElementById('query-result').style.display = 'none';
+    document.getElementById('sql-query').value = '';
 }
 
 function loadExample(btn) {
@@ -90,6 +182,9 @@ function loadExample(btn) {
 }
 
 function escapeHtml(text) {
+    if (typeof text !== 'string') {
+        return text;
+    }
     const map = {
         '&': '&amp;',
         '<': '&lt;',
@@ -118,6 +213,8 @@ function escapeHtml(text) {
     font-size: 14px;
     resize: vertical;
     transition: border-color 0.3s;
+    background: #2d2d2d;
+    color: #f8f8f2;
 }
 
 .query-editor textarea:focus {
@@ -144,6 +241,7 @@ function escapeHtml(text) {
     margin-top: 0;
     margin-bottom: 8px;
     color: #495057;
+    font-size: 1.1rem;
 }
 
 .example-query code {
@@ -161,6 +259,19 @@ function escapeHtml(text) {
 .example-query button {
     padding: 8px 16px;
     font-size: 14px;
+}
+
+table {
+    font-size: 14px;
+}
+
+table th {
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+table td {
+    word-break: break-word;
 }
 </style>
 {% endblock %}
