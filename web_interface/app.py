@@ -1,7 +1,7 @@
 ﻿from flask import Flask, render_template
 import os
 from clickhouse_driver import Client
-from datetime import datetime
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
@@ -63,7 +63,7 @@ def index():
                 for row in result
             ]
             
-            # 4. Последние 5 вакансий (с обработкой пустых значений)
+            # 4. Последние 5 вакансий (с обработкой пустых значений) - ИСПРАВЛЕНО: время в МСК
             result = client.execute('''
                 SELECT 
                     name, 
@@ -79,6 +79,9 @@ def index():
             ''')
             stats["recent_vacancies"] = []
             for row in result:
+                # Преобразуем время в МСК (UTC+3)
+                msk_time = row[6] + timedelta(hours=3) if row[6] else None
+                
                 vacancy = {
                     "title": row[0] if row[0] else "Без названия",
                     "company": row[1] if row[1] else "Неизвестно",
@@ -86,14 +89,20 @@ def index():
                     "salary_from": int(row[3]) if row[3] is not None else 0,
                     "salary_to": int(row[4]) if row[4] is not None else 0,
                     "currency": row[5] if row[5] else "RUR",
-                    "published_date": row[6].strftime('%Y-%m-%d %H:%M:%S') if row[6] else "N/A"
+                    "published_date": msk_time.strftime('%Y-%m-%d %H:%M:%S') if msk_time else "N/A"
                 }
                 stats["recent_vacancies"].append(vacancy)
             
-            # 5. Время последнего обновления (используем created_at)
+            # 5. Время последнего обновления (используем created_at) - ИСПРАВЛЕНО: конвертация в МСК
             result = client.execute('SELECT MAX(created_at) FROM hh_data.vacancies_enhanced')
             last_update_time = result[0][0] if result and result[0] else None
-            stats["last_update"] = last_update_time.strftime('%Y-%m-%d %H:%M:%S') if last_update_time else "N/A"
+            
+            if last_update_time:
+                # Конвертируем UTC в МСК (UTC+3)
+                last_update_time += timedelta(hours=3)
+                stats["last_update"] = last_update_time.strftime('%Y-%m-%d %H:%M:%S')
+            else:
+                stats["last_update"] = "N/A"
             
             # Статус Airflow — если есть данные, считаем его здоровым
             if stats["total_vacancies"] > 0:
